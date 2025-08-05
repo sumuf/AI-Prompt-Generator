@@ -1,4 +1,4 @@
-# PromptForge
+# AI PromptGenerator
 
 An AI-powered prompt generation tool that helps you create structured, effective prompts for various tasks and goals.
 
