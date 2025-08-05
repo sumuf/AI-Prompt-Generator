@@ -34,6 +34,7 @@ import type { GeneratePromptOutput } from "@/ai/flows/generate-prompt";
 import { PromptDisplay } from "@/components/prompt-display";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 const formSchema = z.object({
   goalOrTask: z
@@ -59,6 +60,7 @@ const SuggestionPopover = ({
   suggestions,
   onSelect,
   children,
+  className,
 }: {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -66,10 +68,11 @@ const SuggestionPopover = ({
   suggestions: string[];
   onSelect: (suggestion: string) => void;
   children: React.ReactNode;
+  className?: string;
 }) => (
   <Popover open={isOpen} onOpenChange={onOpenChange}>
     <PopoverTrigger asChild>{children}</PopoverTrigger>
-    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+    <PopoverContent className={cn("w-[--radix-popover-trigger-width] p-0", className)} align="start">
       <Command>
         <CommandList>
           {isSuggesting && (
@@ -133,23 +136,28 @@ export default function Home() {
       clearTimeout(suggestionTimeoutRef.current);
     }
     setLoading(true);
+    setPopoverOpen(true);
     suggestionTimeoutRef.current = setTimeout(async () => {
       const result = await fetcher();
       setLoading(false);
-      if (result.data && result.data.suggestions.length > 0) {
+      if (result.data) {
         setSuggestions(result.data.suggestions);
-        setPopoverOpen(true);
+        if (result.data.suggestions.length > 0) {
+          setPopoverOpen(true);
+        } else {
+          setPopoverOpen(false);
+        }
       } else {
         setSuggestions([]);
         setPopoverOpen(false);
       }
-    }, 500);
+    }, 1000);
   };
 
   const handleGoalChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     form.setValue("goalOrTask", value);
-    if (value.length > 3) {
+    if (value.trim().length > 3) {
       debounceSuggestion(
         () => generateGoalSuggestionsAction({ query: value }),
         setIsSuggestingGoal,
@@ -166,7 +174,7 @@ export default function Home() {
     const value = e.target.value;
     form.setValue("context", value);
     const goalOrTask = form.getValues("goalOrTask");
-    if (value.length > 3 && goalOrTask) {
+    if (value.trim().length > 3 && goalOrTask) {
       debounceSuggestion(
         () => generateContextSuggestionsAction({ query: value, goalOrTask }),
         setIsSuggestingContext,
@@ -183,7 +191,7 @@ export default function Home() {
     const value = e.target.value;
     form.setValue("constraints", value);
     const { goalOrTask, context } = form.getValues();
-    if (value.length > 3 && goalOrTask && context) {
+    if (value.trim().length > 3 && goalOrTask && context) {
       debounceSuggestion(
         () => generateConstraintsSuggestionsAction({ query: value, goalOrTask, context }),
         setIsSuggestingConstraints,
@@ -256,7 +264,7 @@ export default function Home() {
           <div className="inline-flex items-center gap-2 bg-accent/50 text-accent-foreground py-1 px-3 rounded-full mb-4 border border-accent">
             <Wand2 className="h-5 w-5" />
             <h1 className="text-2xl md:text-4xl font-headline font-bold tracking-tight">
-              AI Prompt Generator
+              Prompt Generator
             </h1>
           </div>
           <p className="text-muted-foreground text-lg">
@@ -297,21 +305,25 @@ export default function Home() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-base">Goal or Task</FormLabel>
-                      <SuggestionPopover
-                        isOpen={isGoalPopoverOpen}
-                        onOpenChange={setIsGoalPopoverOpen}
-                        isSuggesting={isSuggestingGoal}
-                        suggestions={goalSuggestions}
-                        onSelect={(s) => onSuggestionSelect("goalOrTask", s, setGoalSuggestions, setIsGoalPopoverOpen)}
-                      >
-                         <FormControl>
-                           <Textarea
+                       <SuggestionPopover
+                          isOpen={isGoalPopoverOpen && goalSuggestions.length > 0}
+                          onOpenChange={setIsGoalPopoverOpen}
+                          isSuggesting={isSuggestingGoal}
+                          suggestions={goalSuggestions}
+                          onSelect={(s) => onSuggestionSelect("goalOrTask", s, setGoalSuggestions, setIsGoalPopoverOpen)}
+                          className="w-[calc(var(--radix-popover-trigger-width)_-_2px)]"
+                        >
+                        <FormControl>
+                          <div className="relative">
+                            <Textarea
                               placeholder="e.g., 'Draft a LinkedIn summary'"
                               className="min-h-[100px] text-base"
                               {...field}
                               onChange={handleGoalChange}
                             />
-                         </FormControl>
+                             <div className="absolute bottom-0 left-0 w-full h-1" />
+                          </div>
+                        </FormControl>
                       </SuggestionPopover>
                       <FormMessage />
                     </FormItem>
@@ -325,19 +337,23 @@ export default function Home() {
                     <FormItem>
                       <FormLabel className="text-base">Context</FormLabel>
                       <SuggestionPopover
-                        isOpen={isContextPopoverOpen}
-                        onOpenChange={setIsContextPopoverOpen}
-                        isSuggesting={isSuggestingContext}
-                        suggestions={contextSuggestions}
-                        onSelect={(s) => onSuggestionSelect("context", s, setContextSuggestions, setIsContextPopoverOpen)}
-                      >
+                         isOpen={isContextPopoverOpen && contextSuggestions.length > 0}
+                         onOpenChange={setIsContextPopoverOpen}
+                         isSuggesting={isSuggestingContext}
+                         suggestions={contextSuggestions}
+                         onSelect={(s) => onSuggestionSelect("context", s, setContextSuggestions, setIsContextPopoverOpen)}
+                         className="w-[calc(var(--radix-popover-trigger-width)_-_2px)]"
+                       >
                         <FormControl>
-                          <Textarea
-                            placeholder="e.g., 'A software engineer with 5 years of experience transitioning into product management.'"
-                            className="min-h-[120px] text-base"
-                            {...field}
-                            onChange={handleContextChange}
-                          />
+                          <div className="relative">
+                           <Textarea
+                              placeholder="e.g., 'A software engineer with 5 years of experience transitioning into product management.'"
+                              className="min-h-[120px] text-base"
+                              {...field}
+                              onChange={handleContextChange}
+                           />
+                           <div className="absolute bottom-0 left-0 w-full h-1" />
+                          </div>
                         </FormControl>
                       </SuggestionPopover>
                       <FormMessage />
@@ -352,19 +368,23 @@ export default function Home() {
                     <FormItem>
                       <FormLabel className="text-base">Constraints (Optional)</FormLabel>
                        <SuggestionPopover
-                        isOpen={isConstraintsPopoverOpen}
-                        onOpenChange={setIsConstraintsPopoverOpen}
-                        isSuggesting={isSuggestingConstraints}
-                        suggestions={constraintsSuggestions}
-                        onSelect={(s) => onSuggestionSelect("constraints", s, setConstraintsSuggestions, setIsConstraintsPopoverOpen)}
-                      >
+                         isOpen={isConstraintsPopoverOpen && constraintsSuggestions.length > 0}
+                         onOpenChange={setIsConstraintsPopoverOpen}
+                         isSuggesting={isSuggestingConstraints}
+                         suggestions={constraintsSuggestions}
+                         onSelect={(s) => onSuggestionSelect("constraints", s, setConstraintsSuggestions, setIsConstraintsPopoverOpen)}
+                         className="w-[calc(var(--radix-popover-trigger-width)_-_2px)]"
+                       >
                         <FormControl>
-                          <Textarea
-                            placeholder="e.g., 'The summary must be under 200 words and written in a professional yet approachable tone.'"
-                            className="min-h-[80px] text-base"
-                            {...field}
-                            onChange={handleConstraintsChange}
-                          />
+                          <div className="relative">
+                            <Textarea
+                              placeholder="e.g., 'The summary must be under 200 words and written in a professional yet approachable tone.'"
+                              className="min-h-[80px] text-base"
+                              {...field}
+                              onChange={handleConstraintsChange}
+                            />
+                            <div className="absolute bottom-0 left-0 w-full h-1" />
+                          </div>
                         </FormControl>
                       </SuggestionPopover>
                       <FormMessage />
