@@ -143,7 +143,7 @@ export default function Home() {
         setSuggestions([]);
         setPopoverOpen(false);
       }
-    }, 500);
+    }, 1000);
   };
 
   const handleGoalChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
