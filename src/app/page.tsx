@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useDebounce } from "@/hooks/use-debounce";
 import {
   generatePromptAction,
   generateGoalSuggestionsAction,
@@ -113,6 +114,9 @@ export default function Home() {
 
   const [generatedPrompt, setGeneratedPrompt] = useState<GeneratePromptOutput | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const goalTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const contextTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const constraintsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
   const form = useForm<FormValues>({
@@ -124,49 +128,86 @@ export default function Home() {
     },
   });
 
-  const suggestionTimeoutRef = useRef<NodeJS.Timeout>();
-
-  const debounceSuggestion = (
-    fetcher: () => Promise<{ data?: { suggestions: string[] }; error?: string }>,
-    setLoading: (loading: boolean) => void,
-    setSuggestions: (suggestions: string[]) => void,
-    setPopoverOpen: (open: boolean) => void
-  ) => {
-    if (suggestionTimeoutRef.current) {
-      clearTimeout(suggestionTimeoutRef.current);
-    }
-    setLoading(true);
-    setPopoverOpen(true);
-    suggestionTimeoutRef.current = setTimeout(async () => {
-      const result = await fetcher();
-      setLoading(false);
-      if (result.data) {
-        setSuggestions(result.data.suggestions);
-        if (result.data.suggestions.length > 0) {
-          setPopoverOpen(true);
-        } else {
-          setPopoverOpen(false);
-        }
+  // Debounced suggestion fetchers with 3-second delay
+  const fetchGoalSuggestions = useCallback(async (query: string) => {
+    setIsSuggestingGoal(true);
+    setIsGoalPopoverOpen(true);
+    try {
+      const result = await generateGoalSuggestionsAction({ query });
+      setIsSuggestingGoal(false);
+      if (result.data && result.data.suggestions.length > 0) {
+        setGoalSuggestions(result.data.suggestions);
+        setIsGoalPopoverOpen(true);
       } else {
-        setSuggestions([]);
-        setPopoverOpen(false);
+        setGoalSuggestions([]);
+        setIsGoalPopoverOpen(false);
       }
-    }, 1000);
-  };
+    } catch (error) {
+      setIsSuggestingGoal(false);
+      setGoalSuggestions([]);
+      setIsGoalPopoverOpen(false);
+    }
+  }, []);
+
+  const fetchContextSuggestions = useCallback(async (query: string, goalOrTask: string) => {
+    setIsSuggestingContext(true);
+    setIsContextPopoverOpen(true);
+    try {
+      const result = await generateContextSuggestionsAction({ query, goalOrTask });
+      setIsSuggestingContext(false);
+      if (result.data && result.data.suggestions.length > 0) {
+        setContextSuggestions(result.data.suggestions);
+        setIsContextPopoverOpen(true);
+      } else {
+        setContextSuggestions([]);
+        setIsContextPopoverOpen(false);
+      }
+    } catch (error) {
+      setIsSuggestingContext(false);
+      setContextSuggestions([]);
+      setIsContextPopoverOpen(false);
+    }
+  }, []);
+
+  const fetchConstraintsSuggestions = useCallback(async (query: string, goalOrTask: string, context: string) => {
+    setIsSuggestingConstraints(true);
+    setIsConstraintsPopoverOpen(true);
+    try {
+      const result = await generateConstraintsSuggestionsAction({ query, goalOrTask, context });
+      setIsSuggestingConstraints(false);
+      if (result.data && result.data.suggestions.length > 0) {
+        setConstraintsSuggestions(result.data.suggestions);
+        setIsConstraintsPopoverOpen(true);
+      } else {
+        setConstraintsSuggestions([]);
+        setIsConstraintsPopoverOpen(false);
+      }
+    } catch (error) {
+      setIsSuggestingConstraints(false);
+      setConstraintsSuggestions([]);
+      setIsConstraintsPopoverOpen(false);
+    }
+  }, []);
+
+  // Create debounced versions with 3-second delay
+  const debouncedFetchGoalSuggestions = useDebounce(fetchGoalSuggestions, 3000);
+  const debouncedFetchContextSuggestions = useDebounce(fetchContextSuggestions, 3000);
+  const debouncedFetchConstraintsSuggestions = useDebounce(fetchConstraintsSuggestions, 3000);
 
   const handleGoalChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     form.setValue("goalOrTask", value);
+    
     if (value.trim().length > 3) {
-      debounceSuggestion(
-        () => generateGoalSuggestionsAction({ query: value }),
-        setIsSuggestingGoal,
-        setGoalSuggestions,
-        setIsGoalPopoverOpen
-      );
+      // Show loading state immediately for better UX
+      setIsSuggestingGoal(true);
+      setIsGoalPopoverOpen(true);
+      debouncedFetchGoalSuggestions(value);
     } else {
+      // Clear suggestions if input is too short
       setGoalSuggestions([]);
       setIsGoalPopoverOpen(false);
+      setIsSuggestingGoal(false);
     }
   };
   
@@ -174,16 +215,17 @@ export default function Home() {
     const value = e.target.value;
     form.setValue("context", value);
     const goalOrTask = form.getValues("goalOrTask");
+    
     if (value.trim().length > 3 && goalOrTask) {
-      debounceSuggestion(
-        () => generateContextSuggestionsAction({ query: value, goalOrTask }),
-        setIsSuggestingContext,
-        setContextSuggestions,
-        setIsContextPopoverOpen
-      );
+      // Show loading state immediately for better UX
+      setIsSuggestingContext(true);
+      setIsContextPopoverOpen(true);
+      debouncedFetchContextSuggestions(value, goalOrTask);
     } else {
+      // Clear suggestions if input is too short or goal is missing
       setContextSuggestions([]);
       setIsContextPopoverOpen(false);
+      setIsSuggestingContext(false);
     }
   };
 
@@ -191,16 +233,17 @@ export default function Home() {
     const value = e.target.value;
     form.setValue("constraints", value);
     const { goalOrTask, context } = form.getValues();
+    
     if (value.trim().length > 3 && goalOrTask && context) {
-      debounceSuggestion(
-        () => generateConstraintsSuggestionsAction({ query: value, goalOrTask, context }),
-        setIsSuggestingConstraints,
-        setConstraintsSuggestions,
-        setIsConstraintsPopoverOpen
-      );
+      // Show loading state immediately for better UX
+      setIsSuggestingConstraints(true);
+      setIsConstraintsPopoverOpen(true);
+      debouncedFetchConstraintsSuggestions(value, goalOrTask, context);
     } else {
+      // Clear suggestions if input is too short or dependencies are missing
       setConstraintsSuggestions([]);
       setIsConstraintsPopoverOpen(false);
+      setIsSuggestingConstraints(false);
     }
   };
 
@@ -208,11 +251,22 @@ export default function Home() {
     field: keyof FormValues,
     suggestion: string,
     setSuggestions: (s: string[]) => void,
-    setPopoverOpen: (o: boolean) => void
+    setPopoverOpen: (o: boolean) => void,
+    textareaRef?: React.RefObject<HTMLTextAreaElement>
   ) => {
     form.setValue(field, suggestion);
     setSuggestions([]);
     setPopoverOpen(false);
+    
+    // Refocus the textarea after selection to maintain cursor visibility
+    setTimeout(() => {
+      if (textareaRef?.current) {
+        textareaRef.current.focus();
+        // Position cursor at the end of the text
+        const length = suggestion.length;
+        textareaRef.current.setSelectionRange(length, length);
+      }
+    }, 100);
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -310,12 +364,13 @@ export default function Home() {
                           onOpenChange={setIsGoalPopoverOpen}
                           isSuggesting={isSuggestingGoal}
                           suggestions={goalSuggestions}
-                          onSelect={(s) => onSuggestionSelect("goalOrTask", s, setGoalSuggestions, setIsGoalPopoverOpen)}
+                          onSelect={(s) => onSuggestionSelect("goalOrTask", s, setGoalSuggestions, setIsGoalPopoverOpen, goalTextareaRef)}
                           className="w-[calc(var(--radix-popover-trigger-width)_-_2px)]"
                         >
                         <FormControl>
                           <div className="relative">
                             <Textarea
+                              ref={goalTextareaRef}
                               placeholder="e.g., 'Draft a LinkedIn summary'"
                               className="min-h-[100px] text-base"
                               {...field}
@@ -341,12 +396,13 @@ export default function Home() {
                          onOpenChange={setIsContextPopoverOpen}
                          isSuggesting={isSuggestingContext}
                          suggestions={contextSuggestions}
-                         onSelect={(s) => onSuggestionSelect("context", s, setContextSuggestions, setIsContextPopoverOpen)}
+                         onSelect={(s) => onSuggestionSelect("context", s, setContextSuggestions, setIsContextPopoverOpen, contextTextareaRef)}
                          className="w-[calc(var(--radix-popover-trigger-width)_-_2px)]"
                        >
                         <FormControl>
                           <div className="relative">
                            <Textarea
+                              ref={contextTextareaRef}
                               placeholder="e.g., 'A software engineer with 5 years of experience transitioning into product management.'"
                               className="min-h-[120px] text-base"
                               {...field}
@@ -372,12 +428,13 @@ export default function Home() {
                          onOpenChange={setIsConstraintsPopoverOpen}
                          isSuggesting={isSuggestingConstraints}
                          suggestions={constraintsSuggestions}
-                         onSelect={(s) => onSuggestionSelect("constraints", s, setConstraintsSuggestions, setIsConstraintsPopoverOpen)}
+                         onSelect={(s) => onSuggestionSelect("constraints", s, setConstraintsSuggestions, setIsConstraintsPopoverOpen, constraintsTextareaRef)}
                          className="w-[calc(var(--radix-popover-trigger-width)_-_2px)]"
                        >
                         <FormControl>
                           <div className="relative">
                             <Textarea
+                              ref={constraintsTextareaRef}
                               placeholder="e.g., 'The summary must be under 200 words and written in a professional yet approachable tone.'"
                               className="min-h-[80px] text-base"
                               {...field}
